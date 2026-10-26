@@ -1,0 +1,149 @@
+# Named Entity Recognition (NER) for Mountain Names
+
+This repository represents a Proof-of-Concept (PoC) demonstrating a custom DeBERTa-based NER pipeline for entity extraction, trained on a limited dataset to validate the approach.
+
+## ⚙️ Setup Instructions
+
+To run this project locally, it is recommended to use a virtual environment.
+1. Clone the repository:
+```text
+git clone https://github.com/sashaLitv/mountain-entity-recognition-deberta
+cd "mountain-entity-recognition-deberta"
+```
+2. Create and activate a virtual environment:
+```text
+python3 -m venv venv_ner
+source venv_ner/bin/activate  
+```
+3. Install dependencies:
+```text
+pip install -r requirements.txt
+```
+
+
+## How to Run
+
+The training script is fully parameterized. You can adjust hyperparameters or provide your own dataset directory.
+```text
+usage: model_training.py [-h] --output_dir OUTPUT_DIR [--dataset_dir DATASET_DIR] [--seed SEED] [--model_checkpoint MODEL_CHECKPOINT]
+                         [--batch_size BATCH_SIZE] [--epochs EPOCHS] [--learning_rate LEARNING_RATE]
+
+Train a NER model for Mountain detection using DeBERTa
+
+options:
+  -h, --help            show this help message and exit
+  --output_dir OUTPUT_DIR
+                        Path to the directory where the fine-tuned model will be saved.
+  --dataset_dir DATASET_DIR
+                        Path to the directory containing train/valid/test JSON files. If empty, downloads from GitHub.
+  --seed SEED           Random seed for reproducibility (default: 42)
+  --model_checkpoint MODEL_CHECKPOINT
+                        Hugging Face model checkpoint (default: microsoft/deberta-v3-base)
+  --batch_size BATCH_SIZE
+                        Training batch size (default: 16)
+  --epochs EPOCHS       Number of training epochs (default: 10).
+  --learning_rate LEARNING_RATE
+                        Learning rate for the optimizer (default: 2e-5).
+```
+
+```text
+python3 src/model_training.py --output_dir models/deberta_ner_model --dataset_dir data/processed
+```
+
+You can use the trained model to extract mountain entities directly from the command line using the model_inference.py script.
+```text
+usage: model_inference.py [-h] --model_dir MODEL_DIR [--text TEXT] [--file FILE]
+
+Run inference using the trained NER Mountain Detector
+
+options:
+  -h, --help            show this help message and exit
+  --model_dir MODEL_DIR
+                        Path to the directory containing the fine-tuned model
+  --text TEXT           A single text string to process
+  --file FILE           Path to a text file containing sentences to process (one sentence per line).
+```
+
+```text
+python3 src/model_inference.py --model_dir models/deberta_ner_model  --text 
+"Hoverla, standing at an altitude of 2061 meters, is the highest peak of Ukraine."
+```
+
+## 📁 Project Structure
+
+The project is structured to separate the dataset, training logic, and inference pipeline. 
+
+```text
+└── mountain-entity-recognition-deberta/        
+    ├── data/
+    │   ├── processed/                      # Split dataset ready for training and testing
+    │   │   ├── test.json
+    │   │   ├── train.json
+    │   │   └── valid.json
+    │   └── raw/                            # Original generated dataset
+    │       └── ner_dataset.json
+    ├── models/
+    │   └── deberta_ner_model/              # Saved fine-tuned model and tokenizer (generated after training)
+    ├── notebooks/
+    │   ├── dataset_creation.ipynb          # Notebook detailing the dataset generation process, validation and EDA
+    │   └── demo.ipynb                      # Interactive demo showcasing edge cases, predictions, and metrics
+    ├── src/
+    │   ├── model_inference.py              # CLI script and `MountainDetector` class for inference
+    │   └── model_training.py               # CLI script used for training and evaluating the model
+    ├── README.md                           # Project documentation
+    └── requirements.txt                    # Project dependencies
+    └── .gitignore                          
+```
+
+
+## Dataset Generation
+
+The dataset was synthetically generated using the **Gemini API** to ensure a diverse and balanced set of contexts for the `MOUNTAIN` entity. All text examples are tokenized and annotated using the standard **BIO (Begin, Inside, Outside) tagging scheme**. 
+The dataset consists of ~2150 examples in total, created under two distinct sets of rules:
+
+**1. Standard Contexts (~1720examples):**
+These examples represent typical occurrences of mountain names in text. They were generated using the following prompt rules:
+```text
+Rules:
+        1. Each sentence MUST contain exactly one name of a prominent mountain from anywhere in the world (e.g., Alps, Andes, Rockies, Caucasus, Himalayas).
+        2. To make the model robust against attention confusion, **some sentences (about 30% of this batch)** can combine a metaphorical/abstract use of a word (like "peak" or "mountain" used for career, tasks, or challenges, tagged as "O") and a real geographical mountain name in the same sentence. Other sentences should use standard descriptive or exploratory contexts.
+        3. Crucially, mix the naming styles: sometimes use the "Mount X" format (e.g., Mount Blanc), and sometimes use the mountain name directly without any prefix (e.g., Everest, Hoverla, Kilimanjaro).
+        4. Vary the position of the mountain name: place it at the beginning, in the middle, or at the end of sentences across different examples.
+        5. In many sentences, include various surrounding geographical features (e.g., provinces, nearby straits, valleys, rivers, bays, or borders).
+        6. Only the mountain name should be tagged as "B-MOUNTAIN" / "I-MOUNTAIN". ALL other geographical entities MUST be tagged as "O".
+```
+**2. Hard Negatives & Edge Cases (~430 examples):**
+These examples were specifically designed to challenge the model, prevent overfitting. They were generated  with strict instructions to output completely "O" tags for the following five categories:
+```text
+Categories:
+        1. (Non-geographical use): mountain names used as brands, pet names, human names, or companies (e.g., "He named his dog Everest").
+        2. (Other geographical entities): cities, countries, rivers, oceans, or straits (e.g., "The Bosphorus strait connects to the Black Sea").
+        3. (Wordplay and common nouns): words like "mount", "mountain", "peak", or "summit" used as regular verbs or metaphorical nouns (e.g., "She reached the peak of her career").
+        4. (Deceptive names): locations, universities, or media titles that contain the word "Mount" or "Mountain" but are NOT actual mountains (e.g., "Google's office is in Mountain View").
+        5. (Other physical landforms): famous canyons, plateaus, hills, cliffs, or deserts (e.g., "Tourists love the Grand Canyon").
+
+Rule: because there are NO actual mountains acting as mountains in these sentences, their `ner_tags` MUST be completely "O". Do NOT use "B-MOUNTAIN" or "I-MOUNTAIN" anywhere.
+```
+
+
+## Pre-trained Model
+
+The core of this project is a DeBERTa architecture, which I fine-tuned specifically to recognize the custom MOUNTAIN class.
+You can download the fully trained model weights from Google Drive here:
+
+🔗 [[Link to Google Drive Here](https://drive.google.com/drive/folders/1-4JvL9quo1VIFkJH0la-emu6ldNtnp_s?hl=uk-UA)]
+
+To run the inference scripts, simply download the model directory, place it in your local folder, and ensure the MODEL_PATH variable in the code points to it.
+
+
+## Model Evaluation
+
+The model was evaluated on a held-out test set to ensure robustness and high generalization. The evaluation metrics were calculated using the strict entity-level scoring provided by the `nervaluate` Python library. 
+
+Below is a screenshot detailing the model's accuracy, precision, recall, and F1-score on the test examples:
+
+<div align="center">
+  <img width="1304" height="216" alt="Screenshot 2026-10-26 at 16 43 30" src="https://github.com/user-attachments/assets/f80d78d0-3d92-4ec4-857c-1f90e54c3aec" />
+</div>
+
+
